@@ -7,6 +7,7 @@
 // Revisions:
 //   2026-10-12 - Initial release (Sayyid Amirreza Sayyid Torabi)
 //   2026-10-13 - Area optimization: WB_SHIFT restored for timing
+//   2026-10-13 - HALT state added for WFI
 ////////////////////////////////////////////////////////////////////////////////
 package MOOR_pkg;
 
@@ -15,7 +16,8 @@ package MOOR_pkg;
 		DECODE  = 3'd1,
 		EXECUTE = 3'd2,
 		SHIFT   = 3'd3,
-		MEMORY  = 3'd4
+		MEMORY  = 3'd4,
+		HALT    = 3'd5
 	} state_t;
 
 	typedef enum logic [2:0] {

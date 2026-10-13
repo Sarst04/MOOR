@@ -8,12 +8,17 @@
 //              block so the branch redirect is a single mux from imemAddr.
 //              Load/store targets are no longer precomputed; the shared ALU
 //              computes the effective address during MEMORY.
+//              WFI: completes as a NOP when an enabled interrupt is already
+//              pending, otherwise advances PC once and stalls in HALT until
+//              irqTake, at which point the trap is taken with mepc pointing
+//              to the instruction after WFI.
 //
 // Revisions:
 //   2026-10-12 - Initial release (Sayyid Amirreza Sayyid Torabi)
 //   2026-10-13 - Area optimization: cheaper priv decode, dedicated pcSel
 //   2026-10-13 - WB_SHIFT restored, SHIFT no longer uses adder with x0
 //   2026-10-13 - Load/store target precomputation removed
+//   2026-10-13 - WFI / HALT state added
 ////////////////////////////////////////////////////////////////////////////////
 module MOOR_controller
     import MOOR_pkg::*;
@@ -54,7 +59,8 @@ module MOOR_controller
     output logic        addSub,
     output logic        isOpAny
 );
-    localparam logic [1:0] CSR_OP_WRITE = 2'b01;
+    localparam logic [1:0]  CSR_OP_WRITE = 2'b01;
+    localparam logic [11:0] WFI_IMM      = 12'h105;
 
     state_t currentState, nextState;
     logic   trapPending;
@@ -68,7 +74,7 @@ module MOOR_controller
     assign funct7 = instrReg[31:25];
 
     logic isLui, isAuipc, isJal, isJalr, isBranch, isLoad, isStore;
-    logic isOpImm, isOp, isShift, isCsr, isEcall, isMret, isSysPriv;
+    logic isOpImm, isOp, isShift, isCsr, isEcall, isMret, isSysPriv, isWfi;
     logic isTargetPrecompute;
 
     assign isLui    = (opcode == OPC_LUI);
@@ -87,6 +93,7 @@ module MOOR_controller
     assign isSysPriv = (opcode == OPC_SYSTEM) & (funct3 == F3_PRIV);
     assign isEcall   = isSysPriv & ~instrReg[20] & ~instrReg[21];
     assign isMret    = isSysPriv & ~instrReg[20] &  instrReg[21] & instrReg[29];
+    assign isWfi     = isSysPriv & (instrReg[31:20] == WFI_IMM);
 
     assign isTargetPrecompute = isJal | isBranch | isJalr;
 
@@ -171,6 +178,11 @@ module MOOR_controller
                     instrLoad  = 1'b1;
                     pcWrite    = 1'b1;
                 end
+                else if (isWfi) begin
+                    imemReq   = 1'b1;
+                    instrLoad = 1'b1;
+                    pcWrite   = 1'b1;
+                end
                 else if (isShift) begin
                     shiftLoad   = 1'b1;
                     shiftUseRs2 = isOp;
@@ -238,12 +250,22 @@ module MOOR_controller
                     pcWrite   = 1'b1;
                 end
             end
+
+            HALT: begin
+                if (irqTake) begin
+                    trapEnter = 1'b1;
+                    imemReq   = 1'b1;
+                    instrLoad = 1'b1;
+                    pcWrite   = 1'b1;
+                end
+            end
         endcase
     end
 
-    logic isEx, selHi, selLo;
+    logic isEx, isHalt, selHi, selLo;
     assign isEx       = (currentState == EXECUTE);
-    assign selHi      = trapPending | (isEx & isMret);
+    assign isHalt     = (currentState == HALT);
+    assign selHi      = trapPending | (isEx & isMret) | (isHalt & irqTake);
     assign selLo      = ~trapPending & isEx & (isMret | isJal | isJalr);
     assign pcSel      = pc_sel_t'({selHi, selLo});
     assign pcBranchEn = isEx & isBranch & ~trapPending;
@@ -253,9 +275,11 @@ module MOOR_controller
         unique0 case (currentState)
             FETCH:   nextState = imemReady ? DECODE : FETCH;
             DECODE:  nextState = (isLoad || isStore) ? MEMORY : EXECUTE;
-            EXECUTE: nextState = (isShift && !trapPending) ? SHIFT : DECODE;
+            EXECUTE: nextState = (isWfi && !irqTake) ? HALT
+                               : ((isShift && !trapPending) ? SHIFT : DECODE);
             SHIFT:   nextState = shiftReady ? DECODE : SHIFT;
             MEMORY:  nextState = dmemReady ? DECODE : MEMORY;
+            HALT:    nextState = irqTake ? DECODE : HALT;
             default: nextState = FETCH;
         endcase
     end
