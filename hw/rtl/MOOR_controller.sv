@@ -1,0 +1,262 @@
+////////////////////////////////////////////////////////////////////////////////
+// File       : MOOR_controller.sv
+// Author(s)  : Sayyid Amirreza Sayyid Torabi <sayyidtorabi@gmail.com>
+// Created    : 2026-10-12
+// Description: FSM and control signal generator. Reduced ECALL/MRET decode;
+//              trapPending has no reset (loaded in DECODE before EXECUTE reads).
+//              pcSel/pcBranchEn computed by dedicated logic after the case
+//              block so the branch redirect is a single mux from imemAddr.
+//              Load/store targets are no longer precomputed; the shared ALU
+//              computes the effective address during MEMORY.
+//
+// Revisions:
+//   2026-10-12 - Initial release (Sayyid Amirreza Sayyid Torabi)
+//   2026-10-13 - Area optimization: cheaper priv decode, dedicated pcSel
+//   2026-10-13 - WB_SHIFT restored, SHIFT no longer uses adder with x0
+//   2026-10-13 - Load/store target precomputation removed
+////////////////////////////////////////////////////////////////////////////////
+module MOOR_controller
+    import MOOR_pkg::*;
+(
+    input  logic        clk,
+    input  logic        rst,
+    input  logic [31:0] instrReg,
+    input  logic        imemReady,
+    input  logic        dmemReady,
+    input  logic        shiftReady,
+    input  logic        irqTake,
+
+    output logic        imemReq,
+    output logic        dmemReq,
+    output logic        dmemWrite,
+
+    output logic        instrLoad,
+    output logic        opALoad,
+    output logic        opAShift,
+    output logic        shiftLoad,
+    output logic        shiftDec,
+    output logic        shiftUseRs2,
+    output logic        captureTarget,
+    output logic        pcWrite,
+    output pc_sel_t     pcSel,
+    output logic        pcBranchEn,
+    output logic        rfWrite,
+    output logic [3:0]  rfReadAddr,
+    output logic [3:0]  rfWriteAddr,
+    output wb_sel_t     wbSel,
+    output logic        csrWriteEn,
+    output logic        trapEnter,
+    output logic        mretEnter,
+    output logic        addA_pc,
+    output logic        addA_zero,
+    output logic        addA_rs1,
+    output logic        addB_rs2,
+    output logic        addSub,
+    output logic        isOpAny
+);
+    localparam logic [1:0] CSR_OP_WRITE = 2'b01;
+
+    state_t currentState, nextState;
+    logic   trapPending;
+
+    logic [6:0] opcode;
+    logic [2:0] funct3;
+    logic [6:0] funct7;
+
+    assign opcode = instrReg[6:0];
+    assign funct3 = instrReg[14:12];
+    assign funct7 = instrReg[31:25];
+
+    logic isLui, isAuipc, isJal, isJalr, isBranch, isLoad, isStore;
+    logic isOpImm, isOp, isShift, isCsr, isEcall, isMret, isSysPriv;
+    logic isTargetPrecompute;
+
+    assign isLui    = (opcode == OPC_LUI);
+    assign isAuipc  = (opcode == OPC_AUIPC);
+    assign isJal    = (opcode == OPC_JAL);
+    assign isJalr   = (opcode == OPC_JALR);
+    assign isBranch = (opcode == OPC_BRANCH);
+    assign isLoad   = (opcode == OPC_LOAD);
+    assign isStore  = (opcode == OPC_STORE);
+    assign isOpImm  = (opcode == OPC_OPIMM);
+    assign isOp     = (opcode == OPC_OP);
+    assign isOpAny  = isOpImm | isOp;
+    assign isShift  = isOpAny & ((funct3 == F3_SLL) | (funct3 == F3_SRL));
+    assign isCsr    = (opcode == OPC_SYSTEM) & (funct3 != F3_PRIV) & (funct3 != F3_XOR);
+
+    assign isSysPriv = (opcode == OPC_SYSTEM) & (funct3 == F3_PRIV);
+    assign isEcall   = isSysPriv & ~instrReg[20] & ~instrReg[21];
+    assign isMret    = isSysPriv & ~instrReg[20] &  instrReg[21] & instrReg[29];
+
+    assign isTargetPrecompute = isJal | isBranch | isJalr;
+
+    always_ff @(posedge clk or posedge rst) begin
+        if (rst)
+            currentState <= FETCH;
+        else
+            currentState <= nextState;
+    end
+
+    always_ff @(posedge clk) begin
+        if (currentState == DECODE)
+            trapPending <= irqTake | isEcall;
+        else
+            trapPending <= 1'b0;
+    end
+
+    always_comb begin
+        imemReq       = 1'b0;
+        dmemReq       = 1'b0;
+        dmemWrite     = 1'b0;
+        instrLoad     = 1'b0;
+        opALoad       = 1'b0;
+        opAShift      = 1'b0;
+        shiftLoad     = 1'b0;
+        shiftDec      = 1'b0;
+        shiftUseRs2   = 1'b0;
+        captureTarget = 1'b0;
+        pcWrite       = 1'b0;
+        rfWrite       = 1'b0;
+        wbSel         = WB_ALU;
+        csrWriteEn    = 1'b0;
+        trapEnter     = 1'b0;
+        mretEnter     = 1'b0;
+        addA_pc       = 1'b0;
+        addA_zero     = 1'b0;
+        addA_rs1      = 1'b0;
+        addB_rs2      = 1'b0;
+        addSub        = 1'b0;
+
+        rfReadAddr  = instrReg[23:20];
+        rfWriteAddr = instrReg[10:7];
+
+        unique0 case (currentState)
+            FETCH: begin
+                imemReq = 1'b1;
+                if (imemReady) begin
+                    instrLoad = 1'b1;
+                    pcWrite   = 1'b1;
+                end
+            end
+
+            DECODE: begin
+                rfReadAddr = instrReg[18:15];
+                opALoad    = 1'b1;
+                if (isTargetPrecompute) begin
+                    captureTarget = 1'b1;
+                    addA_pc       = isJal | isBranch;
+                    addA_rs1      = isJalr;
+                end
+            end
+
+            EXECUTE: begin
+                if (trapPending) begin
+                    trapEnter = 1'b1;
+                    imemReq   = 1'b1;
+                    instrLoad = 1'b1;
+                    pcWrite   = 1'b1;
+                end
+                else if (isMret) begin
+                    mretEnter = 1'b1;
+                    imemReq   = 1'b1;
+                    instrLoad = 1'b1;
+                    pcWrite   = 1'b1;
+                end
+                else if (isCsr) begin
+                    csrWriteEn = (instrReg[13:12] == CSR_OP_WRITE) |
+                                 (instrReg[19:15] != 5'd0);
+                    rfWrite    = 1'b1;
+                    wbSel      = WB_CSR;
+                    imemReq    = 1'b1;
+                    instrLoad  = 1'b1;
+                    pcWrite    = 1'b1;
+                end
+                else if (isShift) begin
+                    shiftLoad   = 1'b1;
+                    shiftUseRs2 = isOp;
+                end
+                else if (isOpAny || isLui || isAuipc) begin
+                    rfWrite   = 1'b1;
+                    wbSel     = WB_ALU;
+                    addA_zero = isLui;
+                    addA_pc   = isAuipc;
+                    addB_rs2  = isOp;
+                    if (isOp)
+                        addSub = ((funct3 == F3_ADD) & funct7[5]) |
+                                 (funct3 == F3_SLT)  | (funct3 == F3_SLTU);
+                    else if (isOpImm)
+                        addSub = (funct3 == F3_SLT) | (funct3 == F3_SLTU);
+                    imemReq   = 1'b1;
+                    instrLoad = 1'b1;
+                    pcWrite   = 1'b1;
+                end
+                else if (isJal || isJalr) begin
+                    rfWrite   = 1'b1;
+                    wbSel     = WB_PC4;
+                    imemReq   = 1'b1;
+                    instrLoad = 1'b1;
+                    pcWrite   = 1'b1;
+                end
+                else if (isBranch) begin
+                    addB_rs2  = 1'b1;
+                    addSub    = 1'b1;
+                    imemReq   = 1'b1;
+                    instrLoad = 1'b1;
+                    pcWrite   = 1'b1;
+                end
+                else begin
+                    imemReq   = 1'b1;
+                    instrLoad = 1'b1;
+                    pcWrite   = 1'b1;
+                end
+            end
+
+            SHIFT: begin
+                if (!shiftReady) begin
+                    opAShift = 1'b1;
+                    shiftDec = 1'b1;
+                end
+                else begin
+                    rfWrite   = 1'b1;
+                    wbSel     = WB_SHIFT;
+                    imemReq   = 1'b1;
+                    instrLoad = 1'b1;
+                    pcWrite   = 1'b1;
+                end
+            end
+
+            MEMORY: begin
+                dmemReq   = 1'b1;
+                dmemWrite = isStore;
+                if (dmemReady) begin
+                    if (isLoad) begin
+                        rfWrite = 1'b1;
+                        wbSel   = WB_LOAD;
+                    end
+                    imemReq   = 1'b1;
+                    instrLoad = 1'b1;
+                    pcWrite   = 1'b1;
+                end
+            end
+        endcase
+    end
+
+    logic isEx, selHi, selLo;
+    assign isEx       = (currentState == EXECUTE);
+    assign selHi      = trapPending | (isEx & isMret);
+    assign selLo      = ~trapPending & isEx & (isMret | isJal | isJalr);
+    assign pcSel      = pc_sel_t'({selHi, selLo});
+    assign pcBranchEn = isEx & isBranch & ~trapPending;
+
+    always_comb begin
+        nextState = currentState;
+        unique0 case (currentState)
+            FETCH:   nextState = imemReady ? DECODE : FETCH;
+            DECODE:  nextState = (isLoad || isStore) ? MEMORY : EXECUTE;
+            EXECUTE: nextState = (isShift && !trapPending) ? SHIFT : DECODE;
+            SHIFT:   nextState = shiftReady ? DECODE : SHIFT;
+            MEMORY:  nextState = dmemReady ? DECODE : MEMORY;
+            default: nextState = FETCH;
+        endcase
+    end
+endmodule
