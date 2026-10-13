@@ -7,6 +7,7 @@
 # Revisions:
 #   2026-10-13 - Initial release
 #   2026-10-13 - Shared warning set for build and lint
+#   2026-10-13 - Paths updated for rtl/core, rtl/periph/uart, rtl/soc layout
 ################################################################################
 
 VERILATOR ?= verilator
@@ -15,25 +16,27 @@ TOP      := MOOR_tb
 OBJ_DIR  := build/obj_dir
 BIN      := $(OBJ_DIR)/$(TOP)
 
-RTL_DIR  := rtl
+RTL_CORE   := rtl/core
+RTL_PERIPH := rtl/periph
+RTL_SOC    := rtl/soc
 
 SV_SOURCES := \
-	$(RTL_DIR)/MOOR_pkg.sv \
-	$(RTL_DIR)/MOOR_axi_if.sv \
-	$(RTL_DIR)/MOOR_alu.sv \
-	$(RTL_DIR)/MOOR_controller.sv \
-	$(RTL_DIR)/MOOR_csr.sv \
-	$(RTL_DIR)/MOOR_datapath.sv \
-	$(RTL_DIR)/MOOR_imm_gen.sv \
-	$(RTL_DIR)/MOOR_lsu.sv \
-	$(RTL_DIR)/MOOR_pc_unit.sv \
-	$(RTL_DIR)/MOOR_regfile.sv \
-	$(RTL_DIR)/MOOR_shifter.sv \
-	$(RTL_DIR)/MOOR_core.sv \
+	$(RTL_CORE)/MOOR_pkg.sv \
+	$(RTL_CORE)/MOOR_axi_if.sv \
+	$(RTL_CORE)/MOOR_alu.sv \
+	$(RTL_CORE)/MOOR_controller.sv \
+	$(RTL_CORE)/MOOR_csr.sv \
+	$(RTL_CORE)/MOOR_datapath.sv \
+	$(RTL_CORE)/MOOR_imm_gen.sv \
+	$(RTL_CORE)/MOOR_lsu.sv \
+	$(RTL_CORE)/MOOR_pc_unit.sv \
+	$(RTL_CORE)/MOOR_regfile.sv \
+	$(RTL_CORE)/MOOR_shifter.sv \
+	$(RTL_CORE)/MOOR_core.sv \
 	mem/MOOR_mem.sv \
-	MOOR_dmem_router.sv \
-	uart/MOOR_uart.sv \
-	MOOR_SoC.sv \
+	$(RTL_PERIPH)/uart/MOOR_uart.sv \
+	$(RTL_SOC)/MOOR_dmem_router.sv \
+	$(RTL_SOC)/MOOR_SoC.sv \
 	tb/MOOR_tb.sv
 
 # Warnings deliberately suppressed:
@@ -67,13 +70,14 @@ $(BIN): $(SV_SOURCES)
 		$(SV_SOURCES)
 
 run: build
+	@mkdir -p sim/out
 	cd sim && ../$(BIN)
 
 lint:
 	$(VERILATOR) $(LINT_FLAGS) $(SV_SOURCES)
 
 clean:
-	rm -rf build
+	rm -rf build sim/out
 
 help:
 	@echo "MOOR Verilator targets:"

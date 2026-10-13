@@ -36,10 +36,9 @@ _start:
 
     # int main(void)
     call    main
-
-    # End-of-test marker:  *(uint32_t*)0x400 = 0xDEADBEEF;
-    li      t0, 0x400
-    li      t1, 0xDEADBEEF
+    
+    li      t0, 0x20000000
+    li      t1, 0x1
     sw      t1, 0(t0)
 
 3:  j       3b

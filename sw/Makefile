@@ -32,7 +32,7 @@ LDFLAGS = -march=$(ARCH) -mabi=$(ABI) \
 
 TARGET  = program.hex
 ELF     = program.elf
-OBJS    = startup.o main.o
+OBJS     = startup.o tests/main.o
 
 all: $(TARGET)
 

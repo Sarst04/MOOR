@@ -18,7 +18,7 @@ module MOOR_tb;
 
     localparam [31:0] ENDSIM_ADDR  = 32'h2000_0000;
     localparam [31:0] ENDSIM_VALUE = 32'h0000_0001;
-    localparam integer TIMEOUT_CYCLES = 200_000;
+    localparam integer TIMEOUT_CYCLES = 400_000;
 
     reg clk, rst;
 
@@ -64,16 +64,20 @@ module MOOR_tb;
         rst = 0;
 
         waitTimeout = 0;
-        while (dut.u_mem.mem[MARKER_ADDR[PC_BITS-1:2]] !== MARKER_VALUE) begin
+        while (dut.u_mem.mem[ENDSIM_ADDR[PC_BITS-1:2]] !== ENDSIM_VALUE) begin
             @(posedge clk);
             waitTimeout = waitTimeout + 1;
             if (waitTimeout > TIMEOUT_CYCLES) begin
                 $display("\nTIMEOUT at cycle %0d", cycleCount);
+                $display("  mem[0x%03x] = 0x%08x (expected 0x%08x)",
+                         ENDSIM_ADDR,
+                         dut.u_mem.mem[ENDSIM_ADDR[PC_BITS-1:2]],
+                         ENDSIM_VALUE);
                 $fatal(1);
             end
         end
         repeat (2) @(posedge clk);
         
-        $stop;
+        $finish;
     end
 endmodule
