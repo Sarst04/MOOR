@@ -8,6 +8,7 @@
 #   2026-10-13 - Initial release
 #   2026-10-13 - Shared warning set for build and lint
 #   2026-10-13 - Paths updated for rtl/core, rtl/periph/uart, rtl/soc layout
+#   2026-10-13 - SEED variable for +verilator+seed (random memory latency)
 ################################################################################
 
 VERILATOR ?= verilator
@@ -19,6 +20,12 @@ BIN      := $(OBJ_DIR)/$(TOP)
 RTL_CORE   := rtl/core
 RTL_PERIPH := rtl/periph
 RTL_SOC    := rtl/soc
+
+# RNG seed for $urandom_range (memory latency) and any other SV randomization.
+#   0            -> non-deterministic (time-based)
+#   <nonzero>    -> reproducible run
+# Override on the command line:  make run SEED=12345
+SEED     ?= 0
 
 SV_SOURCES := \
 	$(RTL_CORE)/MOOR_pkg.sv \
@@ -56,7 +63,7 @@ COMMON_FLAGS := \
 VERILATOR_FLAGS := --binary $(COMMON_FLAGS)
 LINT_FLAGS      := --lint-only $(COMMON_FLAGS)
 
-.PHONY: all build run lint clean help
+.PHONY: all build run run-seed lint clean help
 
 all: run
 
@@ -71,7 +78,21 @@ $(BIN): $(SV_SOURCES)
 
 run: build
 	@mkdir -p sim/out
-	cd sim && ../$(BIN)
+	@if [ "$(SEED)" != "0" ]; then \
+		echo "Running with +verilator+seed+$(SEED)"; \
+	fi
+	cd sim && ../$(BIN) +verilator+seed+$(SEED)
+
+# Explicit target for a fixed reproducible seed.
+# Usage: make run-seed SEED=12345
+run-seed: build
+	@mkdir -p sim/out
+	@if [ "$(SEED)" = "0" ]; then \
+		echo "error: set SEED=<nonzero> (e.g. make run-seed SEED=12345)"; \
+		exit 1; \
+	fi
+	@echo "Running with +verilator+seed+$(SEED)"
+	cd sim && ../$(BIN) +verilator+seed+$(SEED)
 
 lint:
 	$(VERILATOR) $(LINT_FLAGS) $(SV_SOURCES)
@@ -81,8 +102,10 @@ clean:
 
 help:
 	@echo "MOOR Verilator targets:"
-	@echo "  make       Build and run the testbench"
-	@echo "  make build Compile the simulation"
-	@echo "  make run   Run the simulation"
-	@echo "  make lint  Check RTL and testbench warnings"
-	@echo "  make clean Remove generated build files"
+	@echo "  make                     Build and run the testbench"
+	@echo "  make build               Compile the simulation"
+	@echo "  make run                 Run (SEED=0 -> non-deterministic)"
+	@echo "  make run SEED=12345      Run with a fixed RNG seed"
+	@echo "  make run-seed SEED=12345 Run with a fixed RNG seed (errors if 0)"
+	@echo "  make lint                Check RTL and testbench warnings"
+	@echo "  make clean               Remove generated build files"
