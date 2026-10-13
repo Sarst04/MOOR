@@ -10,6 +10,7 @@
 //   2026-10-13 - AXI4 interface with modport
 //   2026-10-13 - UART-only variant; marker at 0x400
 //   2026-10-13 - Clock/counter init moved to initial; marker index uses PC_BITS
+//   2026-10-14 - Elapsed time and cycle count printed before $finish
 ////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns/1ps
 module MOOR_tb;
@@ -39,7 +40,9 @@ module MOOR_tb;
         .HART_ID        (32'd0),
         .INIT_FILE      ("program.hex"),
         .MEM_WORDS      (MEM_WORDS),
-        .UART_ADDR      (32'h1000_0000)
+        .UART_ADDR      (32'h1000_0000),
+        .IMEM_MAX_LAT   (7),
+        .DMEM_MAX_LAT   (7)
     ) dut (
         .clk      (clk),
         .rst      (rst),
@@ -51,9 +54,9 @@ module MOOR_tb;
     integer cycleCount;
 
     always_ff @(posedge clk or posedge rst) begin
-        if (rst) 
+        if (rst)
             cycleCount <= 0;
-        else     
+        else
             cycleCount <= cycleCount + 1;
     end
 
@@ -68,16 +71,17 @@ module MOOR_tb;
             @(posedge clk);
             waitTimeout = waitTimeout + 1;
             if (waitTimeout > TIMEOUT_CYCLES) begin
-                $display("\nTIMEOUT at cycle %0d", cycleCount);
-                $display("  mem[0x%03x] = 0x%08x (expected 0x%08x)",
-                         ENDSIM_ADDR,
-                         dut.u_mem.mem[ENDSIM_ADDR[PC_BITS-1:2]],
-                         ENDSIM_VALUE);
+                $display("TIMEOUT");
+                $display("  Sim time : %0t", $time);
+                $display("  Cycles   : %0d", cycleCount);
                 $fatal(1);
             end
         end
+
         repeat (2) @(posedge clk);
-        
+        $display("Simulation finished");
+        $display("  Sim time : %0t", $time);
+        $display("  Cycles   : %0d", cycleCount);
         $finish;
     end
 endmodule

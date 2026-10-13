@@ -20,7 +20,6 @@
 
 #define UART_TX  (*(volatile uint8_t *)0x10000000u)
 
-/* -------- tiny UART helpers --------------------------------------------- */
 
 static void uart_putc(char c)
 {
@@ -73,9 +72,6 @@ static void uart_put_i32(int32_t v)
     }
 }
 
-/* -------- test programs -------------------------------------------------- */
-
-/* Unsigned Fibonacci, no M extension (shift + add). */
 static uint32_t fib(uint32_t n)
 {
     uint32_t a = 0, b = 1;
@@ -87,7 +83,6 @@ static uint32_t fib(uint32_t n)
     return a;
 }
 
-/* 32-bit mixing function - exercises XOR, shifts, subtraction. */
 static uint32_t mix(uint32_t x)
 {
     x ^= x >> 16;
@@ -103,9 +98,6 @@ static uint32_t mix(uint32_t x)
 static void banner(void)
 {
     uart_puts("\n");
-    uart_puts("========================================\n");
-    uart_puts("  MOOR RV32E - UART bus-functional test\n");
-    uart_puts("========================================\n");
     uart_puts("UART base : 0x10000000\n");
     uart_puts("Hello, MOOR!\n\n");
 }

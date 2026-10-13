@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////////////////
-// File       : MOOR_soc.sv
+// File       : MOOR_SoC.sv
 // Author(s)  : Sayyid Amirreza Sayyid Torabi <sayyidtorabi@gmail.com>
 // Created    : 2026-10-13
 // Description: MOR RV32E SoC wrapper. Instantiates the core and the AXI4
@@ -23,7 +23,9 @@ module MOOR_SoC
     parameter [31:0] HART_ID        = 32'd0,
     parameter        INIT_FILE      = "program.hex",
     parameter integer MEM_WORDS     = 1 << (PC_BITS - 2),
-    parameter [31:0] UART_ADDR      = 32'h1000_0000
+    parameter [31:0] UART_ADDR      = 32'h1000_0000,
+    parameter integer IMEM_MAX_LAT  = 0,
+    parameter integer DMEM_MAX_LAT  = 0
 ) (
     input  logic clk,
     input  logic rst,
@@ -65,13 +67,15 @@ module MOOR_SoC
     );
 
     MOOR_mem #(
-        .INIT_FILE (INIT_FILE),
-        .MEM_WORDS (MEM_WORDS)
+        .INIT_FILE     (INIT_FILE),
+        .MEM_WORDS     (MEM_WORDS),
+        .IMEM_MAX_LAT  (IMEM_MAX_LAT),
+        .DMEM_MAX_LAT  (DMEM_MAX_LAT)
     ) u_mem (
-        .clk  (clk),
-        .rst  (rst),
-        .imem (imem_if.slave),
-        .dmem (dmem_mem_if.slave)
+        .clk   (clk),
+        .rst   (rst),
+        .imem  (imem_if.slave),
+        .dmem  (dmem_mem_if.slave)
     );
 
     MOOR_uart #(

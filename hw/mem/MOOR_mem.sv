@@ -57,9 +57,6 @@ module MOOR_mem #(
                      DMEM_MAX_LAT);
     end
 
-    // ========================================================================
-    // IMEM read
-    // ========================================================================
     logic       imem_pend;
     logic [8:0] imem_cnt;
     logic       imem_rvalid_r;
@@ -99,10 +96,7 @@ module MOOR_mem #(
     assign imem.rvalid  = (IMEM_MAX_LAT == 0) ? imem.arvalid : imem_rvalid_r;
     assign imem.rdata   = mem[imem.araddr[IDX_W+1:2]];
     assign imem.rresp   = 2'b00;
-
-    // ========================================================================
-    // DMEM read
-    // ========================================================================
+    
     logic       dmem_rd_pend;
     logic [8:0] dmem_rd_cnt;
     logic       dmem_rvalid_r;
@@ -143,9 +137,7 @@ module MOOR_mem #(
     assign dmem.rdata   = mem[dmem.araddr[IDX_W+1:2]];
     assign dmem.rresp   = 2'b00;
 
-    // ========================================================================
-    // DMEM write
-    // ========================================================================
+
     logic       dmem_wr_pend;
     logic [8:0] dmem_wr_cnt;
     logic       dmem_bvalid_r;
