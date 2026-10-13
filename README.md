@@ -1,4 +1,4 @@
-# MOOR — Minimal RV32E RISC-V Core
+# MOOR — Minimal Overhead Optimized RISC-V
 
 MOOR is an area-focused, multi-cycle RISC-V processor written in SystemVerilog. Its goal is simple: **build a practical RV32E core with machine-mode interrupts while keeping the hardware as small as reasonably possible.**
 
