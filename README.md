@@ -2,9 +2,7 @@
 
 MOOR is an area-focused, multi-cycle RISC-V processor written in SystemVerilog. The goal is simple: **build a small practical RV32E-class core with machine-mode interrupts, while keeping the hardware as small as reasonably possible.**
 
-> **Built in one night, with AI assistance.** MOOR was developed in a single-night sprint with help from ChatGPT, Claude, and DeepSeek. AI accelerated exploration, implementation, and debugging; the RTL still needs careful architectural verification.
-
-MOOR is an experimental design and a work in progress. It aims to grow toward a complete, well-tested RV32E implementation; this repository should not yet be treated as a claim of full RISC-V ISA or privileged-spec compliance.
+> **Built in one night, with AI assistance.** MOOR was developed in a single-night sprint with help from ChatGPT, Claude, and DeepSeek. AI accelerated exploration, implementation, and debugging.
 
 ## Design goals
 
@@ -60,12 +58,65 @@ The current interrupt-take condition requires global `mstatus.MIE` and the corre
 
 With the default `PC_BITS = 12`, the instruction address exposed at the core boundary is limited to 12 bits and is zero-extended to 32 bits. Increase this parameter if the target memory map requires a wider instruction address.
 
-## Memory interface notes
+## Memory interface
 
-MOOR exposes separate instruction and data interfaces through `MOOR_axi_if`. The current adapter is intended for a simple, single-beat memory model and assumes responses are available without additional wait states. It does **not** yet implement general AXI4 transaction sequencing for arbitrary `ARREADY`, `AWREADY`, and `WREADY` stalls or delayed responses. Treat the interface as an integration starting point rather than a fully general AXI4 master.
+MOOR has separate instruction and data interfaces using `MOOR_axi_if`. The interface uses single-beat AXI-style channels:
 
-The load/store unit assumes naturally aligned halfword and word accesses. Misaligned-access exceptions and a complete memory-ordering implementation are not currently part of the documented feature set.
+- Instruction fetch uses `ARADDR`/`ARVALID` and consumes `RDATA`/`RVALID`; `RREADY` is held high.
+- Data loads use the read channel; stores use the write-address, write-data, and write-response channels.
+- The core's request/ready handshake is adapted to the interface at the top level.
+- The current integration configuration assumes prompt memory responses and is intended for a simple single-beat memory model.
+
+The LSU supports naturally aligned byte, halfword, and word accesses, using byte strobes for stores and sign/zero extension for loads.
+
 
 ## AI-assisted development
 
-MOOR was created in a one-night development sprint with assistance from **ChatGPT (GPT), Claude, and DeepSeek**. The project is also an experiment in using AI tools to accelerate RTL development. Generated suggestions are not assumed to be correct: simulation, code review, synthesis, and architectural testing remain necessary.
+MOOR was built in a one-night development sprint with assistance from **ChatGPT (GPT), Claude, and DeepSeek**. The project explores how AI tools can accelerate RTL design, implementation, and debugging under a tight time constraint. AI was used as a development aid, alongside RTL iteration, synthesis, and static timing analysis.
+
+
+## Synthesis and timing results
+
+MOOR was synthesized with **Yosys and the Nangate45 standard-cell library**, then evaluated with **OpenSTA**. Results below are from the supplied synthesis/timing run.
+
+### Top-level results
+
+| Flow | Mapped cells | Reported cell area |
+| --- | ---: | ---: |
+| Modular/hierarchical synthesis | 2,772 | 4,436.614 |
+| Flattened synthesis | 2,457 | 4,126.192 |
+
+In this run, flattening reduced the mapped cell count by 315 cells (about **11.4%**) and reported area by 310.422 units (about **7.0%**). The reported area is the sum of Nangate45 library cell-area values, not a floorplan or die-area estimate.
+
+### Timing
+
+| Metric | Result |
+| --- | ---: |
+| Minimum clock period reported by OpenSTA | 3.71 ns |
+| Corresponding maximum frequency | 269.61 MHz |
+
+The frequency is calculated from the reported minimum period and reflects the constraints and timing model used in this run.
+
+### local module areas
+
+The following values are from the modular report. They are local module areas excluding child submodules, so they do not sum to the flattened top-level area.
+
+<p align="center">
+  <img src="docs/assests/moor_area_by_module.svg" 
+       alt="MOOR module areas"
+       width="900">
+</p>
+
+
+The register file is the largest module in the modular report, followed by the shared ALU and shifter. The latch-based register file includes 480 `DLH_X1` cells for the 15 × 32-bit stored registers, along with write-data sampling and read/write-selection logic.
+
+For meaningful comparisons, use the same library, tool versions, timing constraints, optimization options, and parameter overrides. The reported run used Yosys 0.65+57 and OpenSTA 3.1.0; the RTL defaults include `PC_BITS=12`, `USE_LATCH=1`, and `SERIAL_SHIFTER=0`.
+
+## License
+
+MOOR is licensed under the **CERN Open Hardware Licence Version 2 – Strongly Reciprocal (CERN-OHL-S-2.0)**.
+
+You are free to use, modify, and manufacture hardware based on this project,
+provided you comply with the terms of the CERN-OHL-S v2.
+
+See the [LICENSE](LICENSE) file for details.
