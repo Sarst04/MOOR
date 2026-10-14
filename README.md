@@ -15,7 +15,7 @@ MOOR is an area-focused, multi-cycle RISC-V processor written in SystemVerilog. 
 ## Architecture
 
 ```mermaid
-flowchart TB
+flowchart LR
     EXT["External system<br/>Instruction and data memory<br/>Software / Timer / External IRQ"]
 
     subgraph MOOR["MOOR RV32E Core"]
