@@ -3,7 +3,6 @@
 // Author(s)  : Sayyid Amirreza Sayyid Torabi <sayyidtorabi@gmail.com>
 // Created    : 2026-10-12
 // Description: FSM and control signal generator. Reduced ECALL/MRET decode;
-//              trapPending has no reset (loaded in DECODE before EXECUTE reads).
 //              pcSel/pcBranchEn computed by dedicated logic after the case
 //              block so the branch redirect is a single mux from imemAddr.
 //              Load/store targets are no longer precomputed; the shared ALU
@@ -13,12 +12,25 @@
 //              irqTake, at which point the trap is taken with mepc pointing
 //              to the instruction after WFI.
 //
+//              imem latency: every state that issues an instruction prefetch
+//              gates instrLoad/pcWrite on imemReady and holds its own state
+//              until imemReady. Non-idempotent side effects fire only on the
+//              completing cycle. ALU controls for isBranch/isOpAny are set
+//              unconditionally so branchTaken is stable across stall cycles.
+//
+//              dmem request is a single-cycle pulse. dmemDone latches the
+//              completion and holds it until the FSM leaves MEMORY, so the
+//              FSM can wait for imemReady after the dmem transaction has
+//              finished without re-issuing the dmem transaction.
+//
 // Revisions:
 //   2026-10-12 - Initial release (Sayyid Amirreza Sayyid Torabi)
 //   2026-10-13 - Area optimization: cheaper priv decode, dedicated pcSel
 //   2026-10-13 - WB_SHIFT restored, SHIFT no longer uses adder with x0
 //   2026-10-13 - Load/store target precomputation removed
 //   2026-10-13 - WFI / HALT state added
+//   2026-10-14 - imem latency handled in EXECUTE/SHIFT/MEMORY/HALT
+//   2026-10-14 - dmem request pulsed; dmemDone sticky
 ////////////////////////////////////////////////////////////////////////////////
 module MOOR_controller
     import MOOR_pkg::*;
@@ -64,6 +76,9 @@ module MOOR_controller
 
     state_t currentState, nextState;
     logic   trapPending;
+    logic   imemStall;
+    logic   dmemSent;
+    logic   dmemDone;
 
     logic [6:0] opcode;
     logic [2:0] funct3;
@@ -97,6 +112,8 @@ module MOOR_controller
 
     assign isTargetPrecompute = isJal | isBranch | isJalr;
 
+    assign imemStall = imemReq & ~imemReady;
+
     always_ff @(posedge clk or posedge rst) begin
         if (rst)
             currentState <= FETCH;
@@ -104,11 +121,31 @@ module MOOR_controller
             currentState <= nextState;
     end
 
-    always_ff @(posedge clk) begin
-        if (currentState == DECODE)
+    always_ff @(posedge clk or posedge rst) begin
+        if (rst)
+            trapPending <= 1'b0;
+        else if (currentState == DECODE)
             trapPending <= irqTake | isEcall;
+        else if (currentState == EXECUTE && trapPending && !imemReady)
+            trapPending <= 1'b1;
         else
             trapPending <= 1'b0;
+    end
+
+    always_ff @(posedge clk or posedge rst) begin
+        if (rst) begin
+            dmemSent <= 1'b0;
+            dmemDone <= 1'b0;
+        end
+        else if (currentState != MEMORY) begin
+            dmemSent <= 1'b0;
+            dmemDone <= 1'b0;
+        end
+        else begin
+            dmemSent <= 1'b1;
+            if (dmemReady || dmemDone)
+                dmemDone <= 1'b1;
+        end
     end
 
     always_comb begin
@@ -158,38 +195,44 @@ module MOOR_controller
 
             EXECUTE: begin
                 if (trapPending) begin
-                    trapEnter = 1'b1;
-                    imemReq   = 1'b1;
-                    instrLoad = 1'b1;
-                    pcWrite   = 1'b1;
+                    imemReq = 1'b1;
+                    if (imemReady) begin
+                        trapEnter = 1'b1;
+                        instrLoad = 1'b1;
+                        pcWrite   = 1'b1;
+                    end
                 end
                 else if (isMret) begin
-                    mretEnter = 1'b1;
-                    imemReq   = 1'b1;
-                    instrLoad = 1'b1;
-                    pcWrite   = 1'b1;
+                    imemReq = 1'b1;
+                    if (imemReady) begin
+                        mretEnter = 1'b1;
+                        instrLoad = 1'b1;
+                        pcWrite   = 1'b1;
+                    end
                 end
                 else if (isCsr) begin
-                    csrWriteEn = (instrReg[13:12] == CSR_OP_WRITE) |
-                                 (instrReg[19:15] != 5'd0);
-                    rfWrite    = 1'b1;
-                    wbSel      = WB_CSR;
-                    imemReq    = 1'b1;
-                    instrLoad  = 1'b1;
-                    pcWrite    = 1'b1;
+                    imemReq = 1'b1;
+                    if (imemReady) begin
+                        csrWriteEn = (instrReg[13:12] == CSR_OP_WRITE) |
+                                     (instrReg[19:15] != 5'd0);
+                        rfWrite   = 1'b1;
+                        wbSel     = WB_CSR;
+                        instrLoad = 1'b1;
+                        pcWrite   = 1'b1;
+                    end
                 end
                 else if (isWfi) begin
-                    imemReq   = 1'b1;
-                    instrLoad = 1'b1;
-                    pcWrite   = 1'b1;
+                    imemReq = 1'b1;
+                    if (imemReady) begin
+                        instrLoad = 1'b1;
+                        pcWrite   = 1'b1;
+                    end
                 end
                 else if (isShift) begin
                     shiftLoad   = 1'b1;
                     shiftUseRs2 = isOp;
                 end
                 else if (isOpAny || isLui || isAuipc) begin
-                    rfWrite   = 1'b1;
-                    wbSel     = WB_ALU;
                     addA_zero = isLui;
                     addA_pc   = isAuipc;
                     addB_rs2  = isOp;
@@ -198,28 +241,38 @@ module MOOR_controller
                                  (funct3 == F3_SLT)  | (funct3 == F3_SLTU);
                     else if (isOpImm)
                         addSub = (funct3 == F3_SLT) | (funct3 == F3_SLTU);
-                    imemReq   = 1'b1;
-                    instrLoad = 1'b1;
-                    pcWrite   = 1'b1;
+                    imemReq = 1'b1;
+                    if (imemReady) begin
+                        rfWrite   = 1'b1;
+                        wbSel     = WB_ALU;
+                        instrLoad = 1'b1;
+                        pcWrite   = 1'b1;
+                    end
                 end
                 else if (isJal || isJalr) begin
-                    rfWrite   = 1'b1;
-                    wbSel     = WB_PC4;
-                    imemReq   = 1'b1;
-                    instrLoad = 1'b1;
-                    pcWrite   = 1'b1;
+                    imemReq = 1'b1;
+                    if (imemReady) begin
+                        rfWrite   = 1'b1;
+                        wbSel     = WB_PC4;
+                        instrLoad = 1'b1;
+                        pcWrite   = 1'b1;
+                    end
                 end
                 else if (isBranch) begin
-                    addB_rs2  = 1'b1;
-                    addSub    = 1'b1;
-                    imemReq   = 1'b1;
-                    instrLoad = 1'b1;
-                    pcWrite   = 1'b1;
+                    addB_rs2 = 1'b1;
+                    addSub   = 1'b1;
+                    imemReq  = 1'b1;
+                    if (imemReady) begin
+                        instrLoad = 1'b1;
+                        pcWrite   = 1'b1;
+                    end
                 end
                 else begin
-                    imemReq   = 1'b1;
-                    instrLoad = 1'b1;
-                    pcWrite   = 1'b1;
+                    imemReq = 1'b1;
+                    if (imemReady) begin
+                        instrLoad = 1'b1;
+                        pcWrite   = 1'b1;
+                    end
                 end
             end
 
@@ -229,23 +282,26 @@ module MOOR_controller
                     shiftDec = 1'b1;
                 end
                 else begin
-                    rfWrite   = 1'b1;
-                    wbSel     = WB_SHIFT;
-                    imemReq   = 1'b1;
-                    instrLoad = 1'b1;
-                    pcWrite   = 1'b1;
+                    rfWrite = 1'b1;
+                    wbSel   = WB_SHIFT;
+                    imemReq = 1'b1;
+                    if (imemReady) begin
+                        instrLoad = 1'b1;
+                        pcWrite   = 1'b1;
+                    end
                 end
             end
 
             MEMORY: begin
-                dmemReq   = 1'b1;
+                dmemReq   = isStore ? ~dmemSent : 1'b1;
                 dmemWrite = isStore;
-                if (dmemReady) begin
+                imemReq   = 1'b1;
+
+                if (imemReady && dmemDone) begin
                     if (isLoad) begin
                         rfWrite = 1'b1;
                         wbSel   = WB_LOAD;
                     end
-                    imemReq   = 1'b1;
                     instrLoad = 1'b1;
                     pcWrite   = 1'b1;
                 end
@@ -253,10 +309,12 @@ module MOOR_controller
 
             HALT: begin
                 if (irqTake) begin
-                    trapEnter = 1'b1;
-                    imemReq   = 1'b1;
-                    instrLoad = 1'b1;
-                    pcWrite   = 1'b1;
+                    imemReq = 1'b1;
+                    if (imemReady) begin
+                        trapEnter = 1'b1;
+                        instrLoad = 1'b1;
+                        pcWrite   = 1'b1;
+                    end
                 end
             end
         endcase
@@ -275,11 +333,13 @@ module MOOR_controller
         unique0 case (currentState)
             FETCH:   nextState = imemReady ? DECODE : FETCH;
             DECODE:  nextState = (isLoad || isStore) ? MEMORY : EXECUTE;
-            EXECUTE: nextState = (isWfi && !irqTake) ? HALT
-                               : ((isShift && !trapPending) ? SHIFT : DECODE);
-            SHIFT:   nextState = shiftReady ? DECODE : SHIFT;
-            MEMORY:  nextState = dmemReady ? DECODE : MEMORY;
-            HALT:    nextState = irqTake ? DECODE : HALT;
+            EXECUTE: nextState = imemStall ? EXECUTE
+                               : (isWfi && !irqTake) ? HALT
+                               : (isShift && !trapPending) ? SHIFT
+                               : DECODE;
+            SHIFT:   nextState = (shiftReady && imemReady) ? DECODE : SHIFT;
+            MEMORY:  nextState = (imemReady && dmemDone) ? DECODE : MEMORY;
+            HALT:    nextState = (irqTake && imemReady) ? DECODE : HALT;
             default: nextState = FETCH;
         endcase
     end

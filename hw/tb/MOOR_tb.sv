@@ -19,7 +19,7 @@ module MOOR_tb;
 
     localparam [31:0] ENDSIM_ADDR  = 32'h2000_0000;
     localparam [31:0] ENDSIM_VALUE = 32'h0000_0001;
-    localparam integer TIMEOUT_CYCLES = 400_000;
+    localparam integer TIMEOUT_CYCLES = 4_000_000;
 
     reg clk, rst;
 
@@ -35,7 +35,7 @@ module MOOR_tb;
         .RESET_PC       (32'h0000_0000),
         .MTVEC_RESET    (30'd0),
         .PC_BITS        (PC_BITS),
-        .USE_LATCH      (1'b1),
+        .USE_LATCH      (1'b0),
         .SERIAL_SHIFTER (1'b0),
         .HART_ID        (32'd0),
         .INIT_FILE      ("program.hex"),

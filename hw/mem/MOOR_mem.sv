@@ -8,13 +8,6 @@
 //                IMEM_MAX_LAT = 0, DMEM_MAX_LAT = 0 -> original zero-latency
 //                IMEM_MAX_LAT = N, DMEM_MAX_LAT = N -> 1..N cycle random stall
 //
-//              WARNING: the current controller only stalls on imemReady during
-//              the initial FETCH. After that, instruction prefetch during
-//              EXECUTE asserts instrLoad unconditionally, i.e. the core assumes
-//              zero-latency instruction memory. Setting IMEM_MAX_LAT > 0 will
-//              corrupt execution unless the controller is also modified to
-//              gate instrLoad/pcWrite on imemReady in EXECUTE. The DMEM path
-//              is fully stall-based and works with any DMEM_MAX_LAT.
 //
 // Revisions:
 //   2026-10-12 - Initial release (Sayyid Amirreza Sayyid Torabi)
@@ -50,7 +43,7 @@ module MOOR_mem #(
         end
 
         if (IMEM_MAX_LAT > 0)
-            $display("[MEM] WARNING: IMEM_MAX_LAT=%0d requires controller change, see header",
+            $display("[MEM] Random IMEM latency enabled, max=%0d cycles",
                      IMEM_MAX_LAT);
         if (DMEM_MAX_LAT > 0)
             $display("[MEM] Random DMEM latency enabled, max=%0d cycles",

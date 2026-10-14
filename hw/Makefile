@@ -42,6 +42,7 @@ SV_SOURCES := \
 	$(RTL_CORE)/MOOR_core.sv \
 	mem/MOOR_mem.sv \
 	$(RTL_PERIPH)/uart/MOOR_uart.sv \
+	$(RTL_PERIPH)/timer/MOOR_timer.sv \
 	$(RTL_SOC)/MOOR_dmem_router.sv \
 	$(RTL_SOC)/MOOR_SoC.sv \
 	tb/MOOR_tb.sv

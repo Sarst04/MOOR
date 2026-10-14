@@ -45,3 +45,7 @@ verilated*.h
 *.bak
 *.orig
 *.rej
+
+sw/build/
+sw/out/
+hw/sim/program.hex

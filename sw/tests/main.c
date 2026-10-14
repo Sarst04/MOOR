@@ -1,25 +1,39 @@
 ////////////////////////////////////////////////////////////////////////////////
 // File       : main.c
 // Author(s)  : Sayyid Amirreza Sayyid Torabi <sayyidtorabi@gmail.com>
-// Created    : 2026-10-13
-// Description: Bare-metal UART demo for the MOOR RV32E SoC.
-//
-//              All output goes through the bus-functional UART at
-//              0x1000_0000. Exercises stores, loads, arithmetic, branches,
-//              shifts, comparisons and function calls so the core is
-//              reasonably covered. No result words are written to memory -
-//              the end-of-test marker is emitted by startup.s after main()
-//              returns.
+// Created    : 2026-10-14
+// Description: Bare-metal timer and interrupt test for the MOOR RV32E SoC.
+//              Programs the machine timer, enables MTIE and MIE. The trap
+//              handler records each tick (mtime + tick index) into a small
+//              log and reschedules MTIMECMP. Main prints the log after all
+//              ticks have fired, so no tick is missed regardless of how long
+//              the UART print path takes.
 //
 // Revisions:
-//   2026-10-13 - Initial release
-//   2026-10-13 - UART-only version (memory checks removed from tb)
+//   2026-10-14 - Initial release
+//   2026-10-14 - Tick logging moved into the ISR
 ////////////////////////////////////////////////////////////////////////////////
 
 #include <stdint.h>
 
-#define UART_TX  (*(volatile uint8_t *)0x10000000u)
+#define UART_TX           (*(volatile uint8_t  *)0x10000000u)
 
+#define TIMER_MTIME_LO    (*(volatile uint32_t *)0x10001000u)
+#define TIMER_MTIME_HI    (*(volatile uint32_t *)0x10001004u)
+#define TIMER_MTIMECMP_LO (*(volatile uint32_t *)0x10001008u)
+#define TIMER_MTIMECMP_HI (*(volatile uint32_t *)0x1000100Cu)
+#define TIMER_CONTROL     (*(volatile uint32_t *)0x10001010u)
+
+#define MSTATUS_MIE       (1u << 3)
+#define MIE_MTIE          (1u << 7)
+
+#define TICK_PERIOD       5000u
+#define TICK_TARGET       5u
+
+volatile uint32_t tick_count;
+volatile uint32_t tick_log[TICK_TARGET];
+
+/* -------- tiny UART helpers --------------------------------------------- */
 
 static void uart_putc(char c)
 {
@@ -32,22 +46,9 @@ static void uart_puts(const char *s)
         uart_putc(*s++);
 }
 
-static void uart_putc_hex(uint8_t nib)
-{
-    uart_putc(nib < 10 ? (char)('0' + nib)
-                       : (char)('A' + nib - 10));
-}
-
-static void uart_put_hex32(uint32_t v)
-{
-    uart_puts("0x");
-    for (int i = 28; i >= 0; i -= 4)
-        uart_putc_hex((uint8_t)((v >> i) & 0xF));
-}
-
 static void uart_put_u32(uint32_t v)
 {
-    char buf[11];
+    char buf[10];
     int  n = 0;
 
     if (v == 0) {
@@ -62,98 +63,127 @@ static void uart_put_u32(uint32_t v)
         uart_putc(buf[n]);
 }
 
-static void uart_put_i32(int32_t v)
+/* -------- CSR helpers ---------------------------------------------------- */
+
+static inline void csr_write_mtvec(uint32_t v)
 {
-    if (v < 0) {
-        uart_putc('-');
-        uart_put_u32((uint32_t)(-v));
-    } else {
-        uart_put_u32((uint32_t)v);
-    }
+    asm volatile ("csrw mtvec, %0" :: "r"(v));
 }
 
-static uint32_t fib(uint32_t n)
+static inline void csr_set_mie(uint32_t v)
 {
-    uint32_t a = 0, b = 1;
-    while (n--) {
-        uint32_t t = a + b;
-        a = b;
-        b = t;
-    }
-    return a;
+    asm volatile ("csrs mie, %0" :: "r"(v));
 }
 
-static uint32_t mix(uint32_t x)
+static inline void csr_set_mstatus(uint32_t v)
 {
-    x ^= x >> 16;
-    x += 0x7ED55D16u;
-    x ^= x << 12;
-    x -= 0x165667B1u;
-    x ^= x >> 5;
-    x += 0xD3A2646Cu;
-    x ^= x << 9;
-    return x;
+    asm volatile ("csrs mstatus, %0" :: "r"(v));
 }
+
+static inline void csr_clear_mstatus(uint32_t v)
+{
+    asm volatile ("csrc mstatus, %0" :: "r"(v));
+}
+
+/* -------- timer helpers -------------------------------------------------- */
+
+static void timer_arm(uint32_t period)
+{
+    uint32_t now_lo  = TIMER_MTIME_LO;
+    uint32_t now_hi  = TIMER_MTIME_HI;
+    uint32_t next_lo = now_lo + period;
+    uint32_t next_hi = (next_lo < now_lo) ? (now_hi + 1u) : now_hi;
+
+    TIMER_MTIMECMP_HI = next_hi;
+    TIMER_MTIMECMP_LO = next_lo;
+    TIMER_CONTROL     = 1u;
+}
+
+static void timer_disable(void)
+{
+    TIMER_CONTROL = 0u;
+}
+
+/* -------- trap handler --------------------------------------------------- */
+
+void trap_handler(void) __attribute__((interrupt("machine")));
+
+void trap_handler(void)
+{
+    uint32_t idx    = tick_count;
+    uint32_t now_lo = TIMER_MTIME_LO;
+    uint32_t now_hi = TIMER_MTIME_HI;
+    uint32_t next_lo;
+    uint32_t next_hi;
+
+    if (idx < TICK_TARGET)
+        tick_log[idx] = now_lo;
+
+    tick_count = idx + 1u;
+
+    next_lo = now_lo + TICK_PERIOD;
+    next_hi = (next_lo < now_lo) ? (now_hi + 1u) : now_hi;
+
+    TIMER_MTIMECMP_HI = next_hi;
+    TIMER_MTIMECMP_LO = next_lo;
+}
+
+/* -------- banner --------------------------------------------------------- */
 
 static void banner(void)
 {
     uart_puts("\n");
-    uart_puts("UART base : 0x10000000\n");
-    uart_puts("Hello, MOOR!\n\n");
+    uart_puts("========================================\n");
+    uart_puts("  MOOR RV32E - timer + IRQ test\n");
+    uart_puts("========================================\n");
+    uart_puts("Timer base : 0x10001000\n");
+    uart_puts("Period     : ");
+    uart_put_u32(TICK_PERIOD);
+    uart_puts(" cycles\n");
+    uart_puts("Ticks      : ");
+    uart_put_u32(TICK_TARGET);
+    uart_puts("\n\n");
 }
 
-static void test_fib(void)
-{
-    uart_puts("[fib] ");
-    for (uint32_t i = 0; i < 12; i++) {
-        uart_put_u32(fib(i));
-        uart_putc(i == 11 ? '\n' : ' ');
-    }
-}
-
-static void test_mix(void)
-{
-    uart_puts("[mix] ");
-    uint32_t x = 0x00000001u;
-    for (int i = 0; i < 6; i++) {
-        x = mix(x);
-        uart_put_hex32(x);
-        uart_putc(i == 5 ? '\n' : ' ');
-    }
-}
-
-static void test_signed(void)
-{
-    uart_puts("[sgn] ");
-    int32_t v = -100;
-    for (int i = 0; i < 8; i++) {
-        uart_put_i32(v);
-        uart_putc(i == 7 ? '\n' : ' ');
-        v = (v * 3) / 2;   /* no M: compiles to shifts/adds */
-    }
-}
-
-static void test_strings(void)
-{
-    static const char *const words[] = {
-        "alpha", "bravo", "charlie", "delta"
-    };
-
-    uart_puts("[str] ");
-    for (int i = 0; i < 4; i++) {
-        uart_puts(words[i]);
-        uart_putc(i == 3 ? '\n' : ' ');
-    }
-}
+/* -------- main ----------------------------------------------------------- */
 
 int main(void)
 {
     banner();
 
-    test_fib();
-    test_mix();
-    test_signed();
-    test_strings();
+    tick_count = 0;
+    for (uint32_t i = 0; i < TICK_TARGET; i++)
+        tick_log[i] = 0;
+
+    csr_write_mtvec((uint32_t)trap_handler);
+    uart_puts("[trap] mtvec = ");
+    uart_put_u32((uint32_t)trap_handler);
+    uart_puts("\n");
+
+    timer_arm(TICK_PERIOD);
+    uart_puts("[timer] armed and enabled\n");
+
+    csr_set_mie(MIE_MTIE);
+    csr_set_mstatus(MSTATUS_MIE);
+    uart_puts("[csr] MTIE + MIE set, waiting for ticks...\n\n");
+
+    while (tick_count < TICK_TARGET)
+        ;
+
+    csr_clear_mstatus(MSTATUS_MIE);
+    timer_disable();
+
+    for (uint32_t i = 0; i < TICK_TARGET; i++) {
+        uart_puts("[tick ");
+        uart_put_u32(i + 1u);
+        uart_puts("] mtime = ");
+        uart_put_u32(tick_log[i]);
+        uart_puts("\n");
+    }
+
+    uart_puts("\n[timer] disabled, total ticks = ");
+    uart_put_u32(tick_count);
+    uart_puts("\n");
 
     uart_puts("\nDone.\n");
     return 0;

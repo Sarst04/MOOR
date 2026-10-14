@@ -2,15 +2,14 @@
 // File       : MOOR_SoC.sv
 // Author(s)  : Sayyid Amirreza Sayyid Torabi <sayyidtorabi@gmail.com>
 // Created    : 2026-10-13
-// Description: MOR RV32E SoC wrapper. Instantiates the core and the AXI4
-//              memory model and wires them through internal AXI4 interfaces.
-//              A MOOR_dmem_router steers data-memory traffic: accesses to
-//              UART_ADDR go to MOOR_uart, everything else goes to MOOR_mem.
-//              INIT_FILE, MEM_WORDS and UART_ADDR are exposed as parameters.
+// Description: MOR RV32E SoC wrapper. Instantiates the core, the AXI4 memory
+//              model, the UART and the machine timer.
 //
 // Revisions:
 //   2026-10-13 - Initial release (Sayyid Amirreza Sayyid Torabi)
 //   2026-10-13 - Added bus-functional UART and dmem address router
+//   2026-10-14 - Fix mem instance net names; forward INIT_FILE/MEM_WORDS
+//   2026-10-14 - Add MOOR_timer, TIMER_ADDR, timer IRQ combine
 ////////////////////////////////////////////////////////////////////////////////
 module MOOR_SoC
     import MOOR_pkg::*;
@@ -24,6 +23,7 @@ module MOOR_SoC
     parameter        INIT_FILE      = "program.hex",
     parameter integer MEM_WORDS     = 1 << (PC_BITS - 2),
     parameter [31:0] UART_ADDR      = 32'h1000_0000,
+    parameter [31:0] TIMER_ADDR     = 32'h1000_1000,
     parameter integer IMEM_MAX_LAT  = 0,
     parameter integer DMEM_MAX_LAT  = 0
 ) (
@@ -34,10 +34,16 @@ module MOOR_SoC
     input  logic extIrq
 );
 
-    MOOR_axi_if imem_if      ();
-    MOOR_axi_if dmem_if      ();
-    MOOR_axi_if dmem_mem_if  ();
-    MOOR_axi_if dmem_uart_if ();
+    MOOR_axi_if imem_if       ();
+    MOOR_axi_if dmem_if       ();
+    MOOR_axi_if dmem_mem_if   ();
+    MOOR_axi_if dmem_uart_if  ();
+    MOOR_axi_if dmem_timer_if ();
+
+    logic timer_irq_int;
+    logic timer_irq_combined;
+
+    assign timer_irq_combined = timerIrq | timer_irq_int;
 
     MOOR_core #(
         .RESET_PC       (RESET_PC),
@@ -52,18 +58,20 @@ module MOOR_SoC
         .imem     (imem_if.master),
         .dmem     (dmem_if.master),
         .swIrq    (swIrq),
-        .timerIrq (timerIrq),
+        .timerIrq (timer_irq_combined),
         .extIrq   (extIrq)
     );
 
     MOOR_dmem_router #(
-        .UART_ADDR (UART_ADDR)
+        .UART_ADDR  (UART_ADDR),
+        .TIMER_ADDR (TIMER_ADDR)
     ) u_dmem_router (
-        .clk  (clk),
-        .rst  (rst),
-        .up   (dmem_if.slave),
-        .mem  (dmem_mem_if.master),
-        .uart (dmem_uart_if.master)
+        .clk   (clk),
+        .rst   (rst),
+        .up    (dmem_if.slave),
+        .mem   (dmem_mem_if.master),
+        .uart  (dmem_uart_if.master),
+        .timer (dmem_timer_if.master)
     );
 
     MOOR_mem #(
@@ -84,6 +92,15 @@ module MOOR_SoC
         .clk  (clk),
         .rst  (rst),
         .dmem (dmem_uart_if.slave)
+    );
+
+    MOOR_timer #(
+        .TIMER_ADDR (TIMER_ADDR)
+    ) u_timer (
+        .clk      (clk),
+        .rst      (rst),
+        .dmem     (dmem_timer_if.slave),
+        .timerIrq (timer_irq_int)
     );
 
 endmodule
