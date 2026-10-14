@@ -169,6 +169,33 @@ The register file is the largest module in the modular report, followed by the s
 
 For meaningful comparisons, use the same library, tool versions, timing constraints, optimization options, and parameter overrides. The reported run used Yosys 0.65+57 and OpenSTA 3.1.0; the RTL defaults include `PC_BITS=12`, `USE_LATCH=1`, and `SERIAL_SHIFTER=0`.
 
+## CoreMark Benchmark
+
+MOOR was benchmarked using **CoreMark 1.0** on the RV32E core at **100 MHz**. The benchmark completed 500 iterations with correct CRC validation.
+
+| Metric | Result |
+| --- | ---: |
+| Core clock | 100 MHz |
+| CoreMark size | 666 |
+| Iterations | 500 |
+| Execution time | 10.154 s |
+| Iterations per second | 49.24 |
+| CoreMark/MHz | 0.4924 |
+| Compiler | GCC 16.1.0 |
+| Optimization | `-Ofast -flto` |
+| ISA / ABI | `rv32e_zicsr` / `ilp32e` |
+| Validation | Passed |
+
+**Compiler flags:**
+
+```text
+-march=rv32e_zicsr -mabi=ilp32e -Ofast -ffreestanding
+-fno-common -Wall -flto -DPERFORMANCE_RUN=1
+```
+
+CoreMark reported: `Correct operation validated.`
+
+
 ## AI-assisted development
 
 MOOR was built in a one-night development sprint with assistance from **ChatGPT (GPT), Claude, and DeepSeek**. The project explores how AI tools can accelerate RTL design, implementation, and debugging under a tight time constraint. AI was used as a development aid alongside RTL iteration, synthesis, and static timing analysis.

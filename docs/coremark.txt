@@ -1,0 +1,16 @@
+CoreMark on MOOR RV32E @ 100MHz
+2K performance run parameters for coremark.
+CoreMark Size    : 666
+Total ticks      : 1015399625
+Total time (secs): 10.153996
+Iterations/Sec   : 49.241696
+Iterations       : 500
+Compiler version : GCC16.1.0
+Compiler flags   : -march=rv32e_zicsr -mabi=ilp32e -Ofast -ffreestanding -fno-common -Wall -flto  -DPERFORMANCE_RUN=1  -march=rv32e_zicsr -mabi=ilp32e -T link.ld -nostdlib -nostartfiles -lgcc -flto
+Memory location  : STACK
+seedcrc          : 0xe9f5
+[0]crclist       : 0xe714
+[0]crcmatrix     : 0x1fd7
+[0]crcstate      : 0x8e3a
+[0]crcfinal      : 0xa14c
+Correct operation validated. See README.md for run and reporting rules.

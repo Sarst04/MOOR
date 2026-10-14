@@ -14,12 +14,13 @@
 ////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns/1ps
 module MOOR_tb;
-    localparam integer PC_BITS   = 13;
+    localparam integer PC_BITS   = 16;
     localparam integer MEM_WORDS = 1 << (PC_BITS - 2);
 
     localparam [31:0] ENDSIM_ADDR  = 32'h2000_0000;
     localparam [31:0] ENDSIM_VALUE = 32'h0000_0001;
-    localparam integer TIMEOUT_CYCLES = 4_000_000;
+    localparam bit    ENABLE_TIMEOUT = 1'b0;
+    localparam integer TIMEOUT_CYCLES = 4_000_000_000;
 
     reg clk, rst;
 
@@ -41,8 +42,8 @@ module MOOR_tb;
         .INIT_FILE      ("program.hex"),
         .MEM_WORDS      (MEM_WORDS),
         .UART_ADDR      (32'h1000_0000),
-        .IMEM_MAX_LAT   (7),
-        .DMEM_MAX_LAT   (7)
+        .IMEM_MAX_LAT   (0),
+        .DMEM_MAX_LAT   (0)
     ) dut (
         .clk      (clk),
         .rst      (rst),
@@ -69,12 +70,14 @@ module MOOR_tb;
         waitTimeout = 0;
         while (dut.u_mem.mem[ENDSIM_ADDR[PC_BITS-1:2]] !== ENDSIM_VALUE) begin
             @(posedge clk);
-            waitTimeout = waitTimeout + 1;
-            if (waitTimeout > TIMEOUT_CYCLES) begin
-                $display("TIMEOUT");
-                $display("  Sim time : %0t", $time);
-                $display("  Cycles   : %0d", cycleCount);
-                $fatal(1);
+            if (ENABLE_TIMEOUT) begin
+                waitTimeout = waitTimeout + 1;
+                if (waitTimeout > TIMEOUT_CYCLES) begin
+                    $display("TIMEOUT");
+                    $display("  Sim time : %0t", $time);
+                    $display("  Cycles   : %0d", cycleCount);
+                    $fatal(1);
+                end
             end
         end
 

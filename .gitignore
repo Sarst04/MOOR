@@ -49,3 +49,5 @@ verilated*.h
 sw/build/
 sw/out/
 hw/sim/program.hex
+
+coremark/

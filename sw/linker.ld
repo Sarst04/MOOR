@@ -4,30 +4,36 @@
 // Created    : 2026-10-13
 // Description: Linker script for the MOOR RV32E SoC.
 //
-//              Memory layout (matches MOOR_mem with PC_BITS = 12, 4 KiB):
-//                0x000 - 0x3FF  .text / .rodata
-//                0x400          end-of-test marker (written by startup.s)
-//                0x500 - 0x5FF  result words (checked by MOOR_tb)
-//                0x800 - 0xFFC  .data / .bss / stack
+//              RAM size must match the testbench PC_BITS:
+//                PC_BITS = 13  ->  MEM_WORDS = 2048  ->  8 KB
 //
-//              Stack grows down from _stack_top = 0xFFC.
+//              Layout (sequential, no hardcoded offsets):
+//                .text / .rodata / .data / .sdata / .bss  from 0x0000 up
+//                _stack_top                                top of RAM - 4
+//                _endsim                                   top of RAM - 16
+//
+//              The end-of-simulation marker written by startup.s lives at
+//              _endsim, in the last 16 bytes of RAM, so it can never collide
+//              with code, data or stack regardless of how the image grows.
 //
 // Revisions:
 //   2026-10-13 - Initial release
 //   2026-10-13 - Define __global_pointer$ for gp-relative addressing
+//   2026-10-14 - RAM size matched to PC_BITS = 13; marker moved to _endsim
 //////////////////////////////////////////////////////////////////////////////*/
 
 ENTRY(_start)
 
 MEMORY
 {
-    RAM (rwx) : ORIGIN = 0x00000000, LENGTH = 4K
+    RAM (rwx) : ORIGIN = 0x00000000, LENGTH = 8K
 }
 
 SECTIONS
 {
     .text : {
-        KEEP(*(.text.init))
+        KEEP(*(.text.start))
+        *(.text.init)
         *(.text .text.*)
         . = ALIGN(4);
     } > RAM
@@ -45,9 +51,6 @@ SECTIONS
         _data_end = .;
     } > RAM
 
-    /* Small data: globals reachable via gp + 12-bit signed offset.
-       __global_pointer$ must sit ~0x800 below the small-data region
-       so that the whole 4 KiB of small data fits in +/-2 KiB. */
     .sdata : ALIGN(4) {
         __global_pointer$ = . + 0x800;
         *(.sdata .sdata.*)
@@ -66,7 +69,7 @@ SECTIONS
     . = ALIGN(4);
     _end = .;
 
-    /* Stack: top of RAM minus one word. */
+    _endsim    = ORIGIN(RAM) + LENGTH(RAM) - 16;
     _stack_top = ORIGIN(RAM) + LENGTH(RAM) - 4;
 
     /DISCARD/ : {

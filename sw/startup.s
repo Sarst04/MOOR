@@ -1,46 +1,39 @@
-#//////////////////////////////////////////////////////////////////////////////
-# File       : startup.s
-# Author(s)  : Sayyid Amirreza Sayyid Torabi <sayyidtorabi@gmail.com>
-# Created    : 2026-10-13
-# Description: MOOR RV32E reset entry point. Sets up gp and sp, zeroes .bss,
-#              calls main(), writes DEADBEEF to 0x400 as an end-of-test
-#              marker, then spins. Only x0..x15 are used (RV32E).
-#
-# Revisions:
-#   2026-10-13 - Initial release
-#   2026-10-13 - Use '#' comments for GAS (// is not accepted in .s files)
-#//////////////////////////////////////////////////////////////////////////////
-
-    .section .text.init, "ax", @progbits
-    .globl  _start
-    .type   _start, @function
-
+    .section .text.start, "ax", @progbits
+    .globl _start
+    .type _start, @function
 _start:
-    # Global pointer (RISC-V small-data addressing).
-    .option push
-    .option norelax
-    la      gp, __global_pointer$
-    .option pop
+    la   sp, _stack_top
 
-    # Stack pointer: top of RAM.
-    la      sp, _stack_top
+    la   t0, __bss_start
+    la   t1, __bss_end
+.L_bss_loop:
+    bgeu t0, t1, .L_bss_done
+    sw   zero, 0(t0)
+    addi t0, t0, 4
+    j    .L_bss_loop
+.L_bss_done:
 
-    # Zero .bss.
-    la      a0, __bss_start
-    la      a1, __bss_end
-1:  bgeu    a0, a1, 2f
-    sw      zero, 0(a0)
-    addi    a0, a0, 4
-    j       1b
-2:
+    la   t0, default_trap
+    csrw mtvec, t0
 
-    # int main(void)
-    call    main
-    
+    call main
+
+    la   t0, _endsim
+    li   t1, 1
+    sw   t1, 0(t0)
+
+.L_hang:
     li      t0, 0x20000000
     li      t1, 0x1
     sw      t1, 0(t0)
+    j    .L_hang
 
-3:  j       3b
+    .size _start, . - _start
 
-    .size   _start, . - _start
+    .section .text
+    .align 2
+    .globl default_trap
+    .type default_trap, @function
+default_trap:
+    mret
+    .size default_trap, . - default_trap

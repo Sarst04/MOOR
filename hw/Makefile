@@ -59,9 +59,14 @@ COMMON_FLAGS := \
 	-Wno-fatal \
 	-Wno-TIMESCALEMOD \
 	-Wno-UNUSEDSIGNAL \
-	-Wno-UNUSEDPARAM
+	-Wno-UNUSEDPARAM \
+	--threads 0
 
-VERILATOR_FLAGS := --binary $(COMMON_FLAGS)
+VERILATOR_FLAGS := --binary $(COMMON_FLAGS) \
+	-O3 \
+	-CFLAGS "-O3 -march=native -flto" \
+	-LDFLAGS "-flto"
+
 LINT_FLAGS      := --lint-only $(COMMON_FLAGS)
 
 .PHONY: all build run run-seed lint clean help
