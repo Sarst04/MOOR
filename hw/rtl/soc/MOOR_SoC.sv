@@ -10,6 +10,7 @@
 //   2026-10-13 - Added bus-functional UART and dmem address router
 //   2026-10-14 - Fix mem instance net names; forward INIT_FILE/MEM_WORDS
 //   2026-10-14 - Add MOOR_timer, TIMER_ADDR, timer IRQ combine
+//   2026-10-18 - Zmmul: ZMMUL parameter forwarded to core
 ////////////////////////////////////////////////////////////////////////////////
 module MOOR_SoC
     import MOOR_pkg::*;
@@ -19,6 +20,7 @@ module MOOR_SoC
     parameter integer PC_BITS       = 32,
     parameter bit    USE_LATCH      = 1'b0,
     parameter bit    SERIAL_SHIFTER = 1'b0,
+    parameter bit    ZMMUL          = 1'b1,
     parameter [31:0] HART_ID        = 32'd0,
     parameter        INIT_FILE      = "program.hex",
     parameter integer MEM_WORDS     = 1 << (PC_BITS - 2),
@@ -51,6 +53,7 @@ module MOOR_SoC
         .PC_BITS        (PC_BITS),
         .USE_LATCH      (USE_LATCH),
         .SERIAL_SHIFTER (SERIAL_SHIFTER),
+        .ZMMUL          (ZMMUL),
         .HART_ID        (HART_ID)
     ) u_core (
         .clk      (clk),

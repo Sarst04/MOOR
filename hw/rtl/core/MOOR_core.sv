@@ -21,6 +21,7 @@
 //   2026-10-13 - AXI4 interface with modport
 //   2026-10-13 - imemAddr narrowed to PC_BITS, zero-extended at AXI boundary
 //   2026-10-13 - branchTaken internal wire dropped
+//   2026-10-18 - Zmmul: ZMMUL parameter, mul control wiring
 ////////////////////////////////////////////////////////////////////////////////
 module MOOR_core
     import MOOR_pkg::*;
@@ -30,6 +31,7 @@ module MOOR_core
     parameter integer PC_BITS       = 12,
     parameter bit    USE_LATCH      = 1'b1,
     parameter bit    SERIAL_SHIFTER = 1'b0,
+    parameter bit    ZMMUL          = 1'b1,
     parameter [31:0] HART_ID        = 32'd0
 ) (
     input  logic clk,
@@ -60,6 +62,8 @@ module MOOR_core
     logic        shiftLoad;
     logic        shiftDec;
     logic        shiftUseRs2;
+    logic        mulLoad;
+    logic        mulStep;
     logic        captureTarget;
     logic        pcWrite;
     pc_sel_t     pcSel;
@@ -80,15 +84,23 @@ module MOOR_core
 
     logic [31:0] instrReg;
     logic        shiftReady;
+    logic        mulReady;
+    logic        mulCorrA;
+    logic        mulCorrB;
     logic        irqTake;
 
-    MOOR_controller u_ctrl (
+    MOOR_controller #(
+        .ZMMUL (ZMMUL)
+    ) u_ctrl (
         .clk           (clk),
         .rst           (rst),
         .instrReg      (instrReg),
         .imemReady     (imemReady),
         .dmemReady     (dmemReady),
         .shiftReady    (shiftReady),
+        .mulReady      (mulReady),
+        .mulCorrA      (mulCorrA),
+        .mulCorrB      (mulCorrB),
         .irqTake       (irqTake),
         .imemReq       (imemReq),
         .dmemReq       (dmemReq),
@@ -99,6 +111,8 @@ module MOOR_core
         .shiftLoad     (shiftLoad),
         .shiftDec      (shiftDec),
         .shiftUseRs2   (shiftUseRs2),
+        .mulLoad       (mulLoad),
+        .mulStep       (mulStep),
         .captureTarget (captureTarget),
         .pcWrite       (pcWrite),
         .pcSel         (pcSel),
@@ -124,6 +138,7 @@ module MOOR_core
         .PC_BITS        (PC_BITS),
         .USE_LATCH      (USE_LATCH),
         .SERIAL_SHIFTER (SERIAL_SHIFTER),
+        .ZMMUL          (ZMMUL),
         .HART_ID        (HART_ID)
     ) u_dp (
         .clk           (clk),
@@ -134,6 +149,8 @@ module MOOR_core
         .shiftLoad     (shiftLoad),
         .shiftDec      (shiftDec),
         .shiftUseRs2   (shiftUseRs2),
+        .mulLoad       (mulLoad),
+        .mulStep       (mulStep),
         .captureTarget (captureTarget),
         .pcWrite       (pcWrite),
         .pcSel         (pcSel),
@@ -162,6 +179,9 @@ module MOOR_core
         .extIrq        (extIrq),
         .instrReg      (instrReg),
         .shiftReady    (shiftReady),
+        .mulReady      (mulReady),
+        .mulCorrA      (mulCorrA),
+        .mulCorrB      (mulCorrB),
         .irqTake       (irqTake)
     );
 

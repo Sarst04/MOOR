@@ -8,7 +8,7 @@ Instruction set and CSR support for the MOOR core.
 | Register file | 16 × 32-bit (`x0`–`x15`), `x0` hardwired to 0 |
 | Instruction length | 32-bit only |
 | Privilege modes | M-mode only |
-| Extensions | None |
+| Extensions | `Zmmul` |
 | Unaligned access | Not supported |
 | Illegal instruction trap | Not implemented |
 
@@ -82,6 +82,10 @@ Instruction set and CSR support for the MOOR core.
 | `SRA` | ✓ |
 | `OR` | ✓ |
 | `AND` | ✓ |
+| `MUL` | ✓ (`Zmmul`) |
+| `MULH` | ✓ (`Zmmul`) |
+| `MULHSU` | ✓ (`Zmmul`) |
+| `MULHU` | ✓ (`Zmmul`) |
 
 ---
 

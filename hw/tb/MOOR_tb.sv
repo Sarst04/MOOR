@@ -12,6 +12,7 @@
 //   2026-10-13 - Clock/counter init moved to initial; marker index uses PC_BITS
 //   2026-10-14 - Elapsed time and cycle count printed before $finish
 //   2026-10-18 - Optional CPI calculation via ENABLE_CPI_CALCULATE
+//   2026-10-18 - Zmmul: MULT state counted as retirement
 ////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns/1ps
 module MOOR_tb;
@@ -40,6 +41,7 @@ module MOOR_tb;
         .PC_BITS        (PC_BITS),
         .USE_LATCH      (1'b0),
         .SERIAL_SHIFTER (1'b0),
+        .ZMMUL          (1'b1),
         .HART_ID        (32'd0),
         .INIT_FILE      ("program.hex"),
         .MEM_WORDS      (MEM_WORDS),
@@ -72,6 +74,9 @@ module MOOR_tb;
              dut.u_core.u_ctrl.imemReady &&
              !dut.u_core.u_ctrl.trapPending &&
              !dut.u_core.u_ctrl.isShift) ||
+            (dut.u_core.u_ctrl.currentState == MOOR_pkg::MULT &&
+             dut.u_core.u_ctrl.mulReady &&
+             dut.u_core.u_ctrl.imemReady) ||
             (dut.u_core.u_ctrl.currentState == MOOR_pkg::SHIFT &&
              dut.u_core.u_ctrl.shiftReady &&
              dut.u_core.u_ctrl.imemReady) ||

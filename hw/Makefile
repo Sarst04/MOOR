@@ -40,6 +40,7 @@ SV_SOURCES := \
 	$(RTL_CORE)/MOOR_regfile.sv \
 	$(RTL_CORE)/MOOR_shifter.sv \
 	$(RTL_CORE)/MOOR_core.sv \
+	$(RTL_CORE)/MOOR_mul.sv \
 	mem/MOOR_mem.sv \
 	$(RTL_PERIPH)/uart/MOOR_uart.sv \
 	$(RTL_PERIPH)/timer/MOOR_timer.sv \

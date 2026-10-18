@@ -2,7 +2,11 @@
 // File       : MOOR_controller.sv
 // Author(s)  : Sayyid Amirreza Sayyid Torabi <sayyidtorabi@gmail.com>
 // Created    : 2026-10-12
-// Description: FSM and control signal generator. Reduced ECALL/MRET decode;
+// Description: FSM and control signal generator. Optional Zmmul (ZMMUL = 1):
+//              MUL/MULH/MULHSU/MULHU load the multiplier in EXECUTE and
+//              iterate in MULT using the shared adder (addB_rs2, rs1 read
+//              from the register file; rs2 for correction A).
+//              Reduced ECALL/MRET decode;
 //              pcSel/pcBranchEn computed by dedicated logic after the case
 //              block so the branch redirect is a single mux from imemAddr.
 //              Load/store targets are no longer precomputed; the shared ALU
@@ -31,16 +35,22 @@
 //   2026-10-13 - WFI / HALT state added
 //   2026-10-14 - imem latency handled in EXECUTE/SHIFT/MEMORY/HALT
 //   2026-10-14 - dmem request pulsed; dmemDone sticky
+//   2026-10-18 - Zmmul: MULT state on the shared adder, ZMMUL parameter
 ////////////////////////////////////////////////////////////////////////////////
 module MOOR_controller
     import MOOR_pkg::*;
-(
+#(
+    parameter bit ZMMUL = 1'b1
+) (
     input  logic        clk,
     input  logic        rst,
     input  logic [31:0] instrReg,
     input  logic        imemReady,
     input  logic        dmemReady,
     input  logic        shiftReady,
+    input  logic        mulReady,
+    input  logic        mulCorrA,
+    input  logic        mulCorrB,
     input  logic        irqTake,
 
     output logic        imemReq,
@@ -53,6 +63,8 @@ module MOOR_controller
     output logic        shiftLoad,
     output logic        shiftDec,
     output logic        shiftUseRs2,
+    output logic        mulLoad,
+    output logic        mulStep,
     output logic        captureTarget,
     output logic        pcWrite,
     output pc_sel_t     pcSel,
@@ -89,7 +101,7 @@ module MOOR_controller
     assign funct7 = instrReg[31:25];
 
     logic isLui, isAuipc, isJal, isJalr, isBranch, isLoad, isStore;
-    logic isOpImm, isOp, isShift, isCsr, isEcall, isMret, isSysPriv, isWfi;
+    logic isOpImm, isOp, isMul, isShift, isCsr, isEcall, isMret, isSysPriv, isWfi;
     logic isTargetPrecompute;
 
     assign isLui    = (opcode == OPC_LUI);
@@ -102,7 +114,8 @@ module MOOR_controller
     assign isOpImm  = (opcode == OPC_OPIMM);
     assign isOp     = (opcode == OPC_OP);
     assign isOpAny  = isOpImm | isOp;
-    assign isShift  = isOpAny & ((funct3 == F3_SLL) | (funct3 == F3_SRL));
+    assign isMul    = ZMMUL & isOp & (funct7 == F7_MULDIV) & ~funct3[2];
+    assign isShift  = isOpAny & ~isMul & ((funct3 == F3_SLL) | (funct3 == F3_SRL));
     assign isCsr    = (opcode == OPC_SYSTEM) & (funct3 != F3_PRIV) & (funct3 != F3_XOR);
 
     assign isSysPriv = (opcode == OPC_SYSTEM) & (funct3 == F3_PRIV);
@@ -158,6 +171,8 @@ module MOOR_controller
         shiftLoad     = 1'b0;
         shiftDec      = 1'b0;
         shiftUseRs2   = 1'b0;
+        mulLoad       = 1'b0;
+        mulStep       = 1'b0;
         captureTarget = 1'b0;
         pcWrite       = 1'b0;
         rfWrite       = 1'b0;
@@ -228,6 +243,9 @@ module MOOR_controller
                         pcWrite   = 1'b1;
                     end
                 end
+                else if (isMul) begin
+                    mulLoad = 1'b1;
+                end
                 else if (isShift) begin
                     shiftLoad   = 1'b1;
                     shiftUseRs2 = isOp;
@@ -292,6 +310,24 @@ module MOOR_controller
                 end
             end
 
+            MULT: begin
+                addB_rs2   = 1'b1;
+                rfReadAddr = mulCorrA ? instrReg[23:20] : instrReg[18:15];
+                if (!mulReady) begin
+                    mulStep = 1'b1;
+                    addSub  = mulCorrA | mulCorrB;
+                end
+                else begin
+                    rfWrite = 1'b1;
+                    wbSel   = (funct3 == F3_ADD) ? WB_MUL : WB_SHIFT;
+                    imemReq = 1'b1;
+                    if (imemReady) begin
+                        instrLoad = 1'b1;
+                        pcWrite   = 1'b1;
+                    end
+                end
+            end
+
             MEMORY: begin
                 dmemReq   = isStore ? ~dmemSent : 1'b1;
                 dmemWrite = isStore;
@@ -336,8 +372,10 @@ module MOOR_controller
             EXECUTE: nextState = imemStall ? EXECUTE
                                : (isWfi && !irqTake) ? HALT
                                : (isShift && !trapPending) ? SHIFT
+                               : (isMul   && !trapPending) ? MULT
                                : DECODE;
             SHIFT:   nextState = (shiftReady && imemReady) ? DECODE : SHIFT;
+            MULT:    nextState = (mulReady && imemReady) ? DECODE : MULT;
             MEMORY:  nextState = (imemReady && dmemDone) ? DECODE : MEMORY;
             HALT:    nextState = (irqTake && imemReady) ? DECODE : HALT;
             default: nextState = FETCH;

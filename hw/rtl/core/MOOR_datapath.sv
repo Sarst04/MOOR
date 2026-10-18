@@ -19,6 +19,7 @@
 //   2026-10-13 - USE_LATCH, SERIAL_SHIFTER, HART_ID propagated
 //   2026-10-13 - imemAddr narrowed to PC_BITS
 //   2026-10-13 - targetWord narrowed; dmemAddr uses full ALU sum
+//   2026-10-18 - Zmmul: MOOR_mul sequencer on shared adder, opA as accumulator
 ////////////////////////////////////////////////////////////////////////////////
 module MOOR_datapath
     import MOOR_pkg::*;
@@ -28,6 +29,7 @@ module MOOR_datapath
     parameter integer PC_BITS       = 12,
     parameter bit    USE_LATCH      = 1'b1,
     parameter bit    SERIAL_SHIFTER = 1'b0,
+    parameter bit    ZMMUL          = 1'b1,
     parameter [31:0] HART_ID        = 32'd0
 ) (
     input  logic        clk,
@@ -39,6 +41,8 @@ module MOOR_datapath
     input  logic        shiftLoad,
     input  logic        shiftDec,
     input  logic        shiftUseRs2,
+    input  logic        mulLoad,
+    input  logic        mulStep,
     input  logic        captureTarget,
     input  logic        pcWrite,
     input  pc_sel_t     pcSel,
@@ -71,6 +75,9 @@ module MOOR_datapath
 
     output logic [31:0] instrReg,
     output logic        shiftReady,
+    output logic        mulReady,
+    output logic        mulCorrA,
+    output logic        mulCorrB,
     output logic        irqTake
 );
     localparam integer PC_W = PC_BITS - 2;
@@ -92,6 +99,9 @@ module MOOR_datapath
     logic [31:0] sum;
     logic [31:0] aluResult;
     logic [31:0] shiftNext;
+    logic [31:0] accNext;
+    logic [31:0] mulLo;
+    logic        adderCout;
     logic [31:0] loadData;
     logic [31:0] csrReadData;
     logic [31:0] csrSrc;
@@ -136,6 +146,7 @@ module MOOR_datapath
         .isOpAny     (isOpAny),
         .funct3      (funct3),
         .sum         (sum),
+        .adderCout   (adderCout),
         .aluResult   (aluResult),
         .branchTaken (branchTaken)
     );
@@ -152,6 +163,25 @@ module MOOR_datapath
         .arithShift  (instrReg[30]),
         .shiftNext   (shiftNext),
         .ready       (shiftReady)
+    );
+
+    MOOR_mul #(
+        .ZMMUL (ZMMUL)
+    ) u_mul (
+        .clk        (clk),
+        .mulLoad    (mulLoad),
+        .mulStep    (mulStep),
+        .opA        (opA),
+        .rfReadData (rfReadData),
+        .sum        (sum),
+        .adderCout  (adderCout),
+        .signA      (~(funct3[1] & funct3[0])),
+        .signB      (~funct3[1]),
+        .accNext    (accNext),
+        .mulLo      (mulLo),
+        .ready      (mulReady),
+        .corrA      (mulCorrA),
+        .corrB      (mulCorrB)
     );
 
     MOOR_lsu u_lsu (
@@ -211,6 +241,7 @@ module MOOR_datapath
             WB_LOAD:  rfWriteData = loadData;
             WB_CSR:   rfWriteData = csrReadData;
             WB_SHIFT: rfWriteData = opA;
+            WB_MUL:   rfWriteData = mulLo;
             default:  rfWriteData = aluResult;
         endcase
     end
@@ -225,6 +256,8 @@ module MOOR_datapath
             opA <= rfReadData;
         else if (opAShift)
             opA <= shiftNext;
+        else if (mulLoad | mulStep)
+            opA <= accNext;
     end
 
     always_ff @(posedge clk) begin

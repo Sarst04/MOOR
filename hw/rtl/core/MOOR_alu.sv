@@ -9,6 +9,7 @@
 // Revisions:
 //   2026-10-12 - Initial release (Sayyid Amirreza Sayyid Torabi)
 //   2026-10-13 - addA_zero restored for timing
+//   2026-10-18 - adderCout exported for Zmmul shift-add
 ////////////////////////////////////////////////////////////////////////////////
 module MOOR_alu
     import MOOR_pkg::*;
@@ -27,11 +28,11 @@ module MOOR_alu
     input  logic [2:0]  funct3,
 
     output logic [31:0] sum,
+    output logic        adderCout,
     output logic [31:0] aluResult,
     output logic        branchTaken
 );
     logic [31:0] adderA, adderB, adderBx;
-    logic        adderCout;
     logic        sumZero, ltSigned, ltUnsigned;
 
     always_comb begin

@@ -8,6 +8,7 @@
 //   2026-10-12 - Initial release (Sayyid Amirreza Sayyid Torabi)
 //   2026-10-13 - Area optimization: WB_SHIFT restored for timing
 //   2026-10-13 - HALT state added for WFI
+//   2026-10-18 - Zmmul: MULT state, WB_MUL, F7_MULDIV
 ////////////////////////////////////////////////////////////////////////////////
 package MOOR_pkg;
 
@@ -17,7 +18,8 @@ package MOOR_pkg;
 		EXECUTE = 3'd2,
 		SHIFT   = 3'd3,
 		MEMORY  = 3'd4,
-		HALT    = 3'd5
+		HALT    = 3'd5,
+		MULT    = 3'd6
 	} state_t;
 
 	typedef enum logic [2:0] {
@@ -25,7 +27,8 @@ package MOOR_pkg;
 		WB_PC4   = 3'd1,
 		WB_LOAD  = 3'd2,
 		WB_CSR   = 3'd3,
-		WB_SHIFT = 3'd4
+		WB_SHIFT = 3'd4,
+		WB_MUL   = 3'd5
 	} wb_sel_t;
 
 	typedef enum logic [1:0] {
@@ -68,6 +71,8 @@ package MOOR_pkg;
 	localparam logic [2:0] F3_SRL  = 3'b101;
 	localparam logic [2:0] F3_OR   = 3'b110;
 	localparam logic [2:0] F3_AND  = 3'b111;
+
+	localparam logic [6:0] F7_MULDIV = 7'b0000001;
 
 	localparam logic [2:0] F3_JALR = 3'b000;
 	localparam logic [2:0] F3_PRIV = 3'b000;

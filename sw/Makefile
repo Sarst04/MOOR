@@ -18,7 +18,7 @@ OBJDUMP  = $(CROSS)objdump
 SIZE     = $(CROSS)size
 NM       = $(CROSS)nm
 
-ARCH    ?= rv32e_zicsr
+ARCH    ?= rv32e_zicsr_zmmul
 ABI     ?= ilp32e
 
 CFLAGS  = -march=$(ARCH) -mabi=$(ABI) -Os -g \
