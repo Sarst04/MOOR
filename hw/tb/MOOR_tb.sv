@@ -11,6 +11,7 @@
 //   2026-10-13 - UART-only variant; marker at 0x400
 //   2026-10-13 - Clock/counter init moved to initial; marker index uses PC_BITS
 //   2026-10-14 - Elapsed time and cycle count printed before $finish
+//   2026-10-18 - Optional CPI calculation via ENABLE_CPI_CALCULATE
 ////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns/1ps
 module MOOR_tb;
@@ -21,6 +22,7 @@ module MOOR_tb;
     localparam [31:0] ENDSIM_VALUE = 32'h0000_0001;
     localparam bit    ENABLE_TIMEOUT = 1'b0;
     localparam integer TIMEOUT_CYCLES = 4_000_000_000;
+    localparam bit    ENABLE_CPI_CALCULATE = 1'b1;
 
     reg clk, rst;
 
@@ -53,12 +55,31 @@ module MOOR_tb;
     );
 
     integer cycleCount;
+    integer instrRetired;
 
     always_ff @(posedge clk or posedge rst) begin
         if (rst)
             cycleCount <= 0;
         else
             cycleCount <= cycleCount + 1;
+    end
+
+    always_ff @(posedge clk or posedge rst) begin
+        if (rst)
+            instrRetired <= 0;
+        else if (
+            (dut.u_core.u_ctrl.currentState == MOOR_pkg::EXECUTE &&
+             dut.u_core.u_ctrl.imemReady &&
+             !dut.u_core.u_ctrl.trapPending &&
+             !dut.u_core.u_ctrl.isShift) ||
+            (dut.u_core.u_ctrl.currentState == MOOR_pkg::SHIFT &&
+             dut.u_core.u_ctrl.shiftReady &&
+             dut.u_core.u_ctrl.imemReady) ||
+            (dut.u_core.u_ctrl.currentState == MOOR_pkg::MEMORY &&
+             dut.u_core.u_ctrl.imemReady &&
+             dut.u_core.u_ctrl.dmemDone)
+        )
+            instrRetired <= instrRetired + 1;
     end
 
     integer waitTimeout;
@@ -74,8 +95,6 @@ module MOOR_tb;
                 waitTimeout = waitTimeout + 1;
                 if (waitTimeout > TIMEOUT_CYCLES) begin
                     $display("TIMEOUT");
-                    $display("  Sim time : %0t", $time);
-                    $display("  Cycles   : %0d", cycleCount);
                     $fatal(1);
                 end
             end
@@ -86,5 +105,15 @@ module MOOR_tb;
         $display("  Sim time : %0t", $time);
         $display("  Cycles   : %0d", cycleCount);
         $finish;
+    end
+
+    final begin
+        if (ENABLE_CPI_CALCULATE) begin
+            $display("  Instructions retired : %0d", instrRetired);
+            if (instrRetired > 0)
+                $display("  CPI                  : %f", real'(cycleCount) / real'(instrRetired));
+            else
+                $display("  CPI                  : N/A");
+        end
     end
 endmodule

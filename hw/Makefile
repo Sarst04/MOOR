@@ -59,8 +59,7 @@ COMMON_FLAGS := \
 	-Wno-fatal \
 	-Wno-TIMESCALEMOD \
 	-Wno-UNUSEDSIGNAL \
-	-Wno-UNUSEDPARAM \
-	--threads 0
+	-Wno-UNUSEDPARAM
 
 VERILATOR_FLAGS := --binary $(COMMON_FLAGS) \
 	-O3 \
